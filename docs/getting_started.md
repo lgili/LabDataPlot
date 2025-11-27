@@ -1,16 +1,41 @@
 # Getting Started
 
-This guide will help you get up and running with DataPlotter.
+This guide will help you get up and running with LabDataPlot.
 
 ## Installation
 
-First, ensure you have the required dependencies:
+```bash
+pip install labdataplot
+```
+
+Or install from source:
 
 ```bash
 pip install pandas matplotlib openpyxl
 ```
 
-Then, add the `labdataplot` folder to your project or Python path.
+## Supported Equipment
+
+LabDataPlot supports data files from:
+
+### Data Acquisition / Dataloggers
+- Keysight 34970A/34972A (Excel)
+- Dewesoft Datalogger (Excel)
+- Fluke Hydra 2680/2686 (CSV, Excel)
+- Hioki LR8400/LR8401/MR8875 (CSV, Excel)
+
+### Oscilloscopes
+- Tektronix TDS/MSO/DPO/MDO series (CSV)
+- Rigol DS/MSO series (CSV)
+- Yokogawa DL/SL series (CSV, Excel)
+
+### Power Analyzers & Source Meters
+- Yokogawa WT series (CSV, Excel)
+- Keithley 2400/2450 SourceMeter (CSV, Excel)
+- Keithley DMM6500/DAQ6510 (CSV, Excel)
+
+### Generic
+- Any CSV file with auto-detection
 
 ## Basic Workflow
 
@@ -23,20 +48,22 @@ The typical workflow is:
 ## Step 1: Loading Data
 
 ```python
-from labdataplot import DataLoader
+from labdataplot import DataLoader, list_parsers
+
+# See all available parsers
+print(list_parsers())
+# ['dewesoft', 'keysight', 'fluke', 'hioki', 'tektronix', 'rigol', 'yokogawa', 'keithley', 'csv']
 
 # The simplest way - auto-detects the format
 loader = DataLoader('path/to/your/file.xlsx')
 ```
 
-The module will automatically detect whether your file is from:
-- Dewesoft Datalogger
-- Keysight 34970A
+The module will automatically detect your file format based on content.
 
 If you want to explicitly specify the format:
 
 ```python
-loader = DataLoader('file.xlsx', format='keysight')
+loader = DataLoader('file.csv', format='tektronix')
 ```
 
 ## Step 2: Exploring Your Data
@@ -84,10 +111,11 @@ df = loader.data
 time = loader.time
 
 # Single column by name
-channel_data = loader['101 (VDC)']
+channel_data = loader['CH1']
 
 # Find channels by pattern
-slot1_channels = loader.get_channel(r'^10')  # Channels starting with "10"
+voltage_channels = loader.get_channel(r'VDC')  # All channels containing "VDC"
+slot1_channels = loader.get_channel(r'^10')    # Channels starting with "10"
 ```
 
 ## Step 4: Creating Plots
@@ -98,10 +126,10 @@ from labdataplot import Plotter
 plotter = Plotter(loader)
 
 # Simple plot
-plotter.plot('101 (VDC)')
+plotter.plot('CH1')
 
 # Multiple channels on same plot
-plotter.plot(['101 (VDC)', '102 (VDC)', '103 (VDC)'])
+plotter.plot(['CH1', 'CH2', 'CH3'])
 
 # Show the plots
 plotter.show()
@@ -116,6 +144,7 @@ from labdataplot import DataLoader, Plotter
 loader = DataLoader('measurement.xlsx')
 
 # Explore
+print(f"Equipment: {loader.info.equipment}")
 print(f"Loaded {len(loader.columns)} channels")
 print(f"Acquisition date: {loader.info.acquisition_date}")
 print(f"First 5 channels: {loader.columns[:5]}")
@@ -130,8 +159,51 @@ plotter.plot(
 plotter.show()
 ```
 
+## Working with Different Equipment
+
+### Oscilloscope Data (Tektronix, Rigol)
+
+```python
+loader = DataLoader('scope_capture.csv')
+
+print(f"Sample rate: {loader.info.sample_rate} Hz")
+print(f"Channels: {loader.columns}")
+
+plotter = Plotter(loader)
+plotter.plot(['CH1', 'CH2'], title='Oscilloscope Capture')
+plotter.show()
+```
+
+### Power Analyzer Data (Yokogawa WT, Keithley)
+
+```python
+loader = DataLoader('power_measurement.csv', format='keithley')
+
+# Access voltage and current
+voltage = loader['Voltage']
+current = loader['Current']
+
+plotter = Plotter(loader)
+plotter.subplots(['Voltage', 'Current', 'Power'], rows=3)
+plotter.show()
+```
+
+### Datalogger Data (Keysight, Dewesoft, Fluke, Hioki)
+
+```python
+loader = DataLoader('temperature_log.xlsx')
+
+# Find all temperature channels
+temp_channels = loader.get_channel(r'Temp|°C')
+
+plotter = Plotter(loader)
+plotter.heatmap(columns=temp_channels, title='Temperature Distribution')
+plotter.show()
+```
+
 ## Next Steps
 
 - Learn more about [DataLoader API](api_dataloader.md)
 - Explore [Plotter features](api_plotter.md)
 - See more [Examples](examples.md)
+- Learn how to [Add New Parsers](adding_parsers.md)

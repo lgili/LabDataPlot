@@ -7,7 +7,7 @@
 <p align="center">
   <a href="https://pypi.org/project/labdataplot/"><img src="https://img.shields.io/pypi/v/labdataplot.svg" alt="PyPI version"></a>
   <a href="https://pypi.org/project/labdataplot/"><img src="https://img.shields.io/pypi/pyversions/labdataplot.svg" alt="Python versions"></a>
-  <a href="https://github.com/yourusername/labdataplot/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
+  <a href="https://github.com/lgili/LabDataPlot/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License"></a>
 </p>
 
 ---
@@ -17,7 +17,7 @@
 ## Features
 
 - **Automatic format detection** - Just pass the file, the library figures out the format
-- **Multiple equipment support** - Keysight, Dewesoft, and easily extensible for more
+- **Multiple equipment support** - 10+ instruments from major manufacturers
 - **Simple plotting API** - Clean wrapper around matplotlib for quick visualizations
 - **Direct data access** - Full pandas DataFrame access for custom analysis
 - **Time-aware** - Automatic detection and parsing of timestamp columns
@@ -25,11 +25,32 @@
 
 ## Supported Equipment
 
+### Data Acquisition / Dataloggers
 | Equipment | Parser Name | File Type |
 |-----------|-------------|-----------|
 | Keysight 34970A/34972A | `keysight` | Excel (.xlsx) |
 | Dewesoft Datalogger | `dewesoft` | Excel (.xlsx) |
-| *More coming soon...* | | |
+| Fluke Hydra 2680/2686 | `fluke` | CSV, Excel |
+| Hioki LR8400/LR8401/MR8875 | `hioki` | CSV, Excel |
+
+### Oscilloscopes
+| Equipment | Parser Name | File Type |
+|-----------|-------------|-----------|
+| Tektronix TDS/MSO/DPO/MDO | `tektronix` | CSV |
+| Rigol DS/MSO series | `rigol` | CSV |
+| Yokogawa DL/SL series | `yokogawa` | CSV, Excel |
+
+### Power Analyzers & Source Meters
+| Equipment | Parser Name | File Type |
+|-----------|-------------|-----------|
+| Yokogawa WT series | `yokogawa` | CSV, Excel |
+| Keithley 2400/2450 SourceMeter | `keithley` | CSV, Excel |
+| Keithley DMM6500/DAQ6510 | `keithley` | CSV, Excel |
+
+### Generic
+| Format | Parser Name | Description |
+|--------|-------------|-------------|
+| CSV | `csv` | Generic CSV with auto-detection |
 
 ## Installation
 
@@ -72,22 +93,26 @@ plotter.show()
 ### Loading Data
 
 ```python
-from labdataplot import DataLoader
+from labdataplot import DataLoader, list_parsers
+
+# See all available parsers
+print(list_parsers())
+# ['dewesoft', 'keysight', 'fluke', 'hioki', 'tektronix', 'rigol', 'yokogawa', 'keithley', 'csv']
 
 # Auto-detect format
 loader = DataLoader('data.xlsx')
 
 # Or specify format explicitly
-loader = DataLoader('data.xlsx', format='keysight')
+loader = DataLoader('data.csv', format='tektronix')
 
 # Access data
 df = loader.data              # Full pandas DataFrame
 time = loader.time            # Time column (if available)
 cols = loader.columns         # List of data columns
-channel = loader['ch_01']     # Direct column access
+channel = loader['CH1']       # Direct column access
 
 # Find channels by pattern
-slot1 = loader.get_channel(r'^10')  # Channels starting with "10"
+voltage_channels = loader.get_channel(r'VDC')  # All channels with "VDC"
 ```
 
 ### Plotting
@@ -95,17 +120,17 @@ slot1 = loader.get_channel(r'^10')  # Channels starting with "10"
 ```python
 from labdataplot import DataLoader, Plotter
 
-loader = DataLoader('data.xlsx')
+loader = DataLoader('oscilloscope_capture.csv')
 plotter = Plotter(loader)
 
 # Single channel
-plotter.plot('101 (VDC)', title='Channel 101', ylabel='Voltage (V)')
+plotter.plot('CH1', title='Channel 1', ylabel='Voltage (V)')
 
 # Multiple channels
-plotter.plot(['101 (VDC)', '102 (VDC)', '103 (VDC)'])
+plotter.plot(['CH1', 'CH2', 'CH3', 'CH4'])
 
 # Subplots - one per channel
-plotter.subplots(['ch1', 'ch2', 'ch3', 'ch4'], rows=2, cols=2)
+plotter.subplots(['CH1', 'CH2', 'CH3', 'CH4'], rows=2, cols=2)
 
 # Quick view of first N channels
 plotter.quick(10)
@@ -122,13 +147,13 @@ plotter.show()
 ### Comparing Multiple Files
 
 ```python
-loader1 = DataLoader('before_test.xlsx')
-loader2 = DataLoader('after_test.xlsx')
+loader1 = DataLoader('before_test.csv')
+loader2 = DataLoader('after_test.csv')
 
 plotter = Plotter(loader1)
 plotter.compare(
     loader2,
-    column='ch_01',
+    column='CH1',
     labels=['Before', 'After'],
     title='Test Comparison'
 )
@@ -140,13 +165,13 @@ plotter.show()
 ### Simple Line Plot
 ```python
 plotter.plot(
-    ['101 (VDC)', '102 (VDC)'],
-    title='Voltage Measurement',
+    ['CH1', 'CH2'],
+    title='Oscilloscope Capture',
     ylabel='Voltage (V)',
-    xlabel='Time'
+    xlabel='Time (s)'
 )
 ```
-![Simple Plot](labdataplot/docs/img_simple_plot.png)
+![Simple Plot](docs/img_simple_plot.png)
 
 ### Subplots
 ```python
@@ -156,7 +181,7 @@ plotter.subplots(
     title='One Channel per Slot'
 )
 ```
-![Subplots](labdataplot/docs/img_subplots.png)
+![Subplots](docs/img_subplots.png)
 
 ### Heatmap
 ```python
@@ -165,11 +190,11 @@ plotter.heatmap(
     title='First 15 Channels'
 )
 ```
-![Heatmap](labdataplot/docs/img_heatmap.png)
+![Heatmap](docs/img_heatmap.png)
 
 ## Adding Support for New Equipment
 
-LabDataPlot is designed to be easily extensible. To add support for a new equipment:
+LabDataPlot is designed to be easily extensible. To add support for new equipment:
 
 1. Create a new parser in `labdataplot/parsers/`
 2. Inherit from `BaseParser`
@@ -178,6 +203,7 @@ LabDataPlot is designed to be easily extensible. To add support for a new equipm
 
 ```python
 from labdataplot.parsers.base import BaseParser, DataInfo
+import pandas as pd
 
 class MyEquipmentParser(BaseParser):
     name = "my_equipment"
@@ -192,7 +218,7 @@ class MyEquipmentParser(BaseParser):
         ...
 ```
 
-See the [documentation](labdataplot/docs/adding_parsers.md) for detailed instructions.
+See the [documentation](docs/adding_parsers.md) for detailed instructions.
 
 ## API Reference
 
@@ -222,13 +248,13 @@ See the [documentation](labdataplot/docs/adding_parsers.md) for detailed instruc
 
 ## Documentation
 
-Full documentation is available in the [docs folder](labdataplot/docs/):
+Full documentation is available in the [docs folder](docs/):
 
-- [Getting Started](labdataplot/docs/getting_started.md)
-- [DataLoader API](labdataplot/docs/api_dataloader.md)
-- [Plotter API](labdataplot/docs/api_plotter.md)
-- [Adding New Parsers](labdataplot/docs/adding_parsers.md)
-- [Examples](labdataplot/docs/examples.md)
+- [Getting Started](docs/getting_started.md)
+- [DataLoader API](docs/api_dataloader.md)
+- [Plotter API](docs/api_plotter.md)
+- [Adding New Parsers](docs/adding_parsers.md)
+- [Examples](docs/examples.md)
 
 ## Contributing
 
@@ -245,8 +271,8 @@ Please feel free to open an issue or submit a pull request.
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/labdataplot.git
-cd labdataplot
+git clone https://github.com/lgili/LabDataPlot.git
+cd LabDataPlot
 
 # Install in development mode with dev dependencies
 pip install -e ".[dev]"
@@ -261,12 +287,22 @@ ruff check labdataplot
 
 ## Roadmap
 
-- [ ] Support for more equipment (Tektronix, Yokogawa, NI DAQ, etc.)
-- [ ] CSV file support
+- [x] Keysight 34970A datalogger support
+- [x] Dewesoft datalogger support
+- [x] Tektronix oscilloscope support
+- [x] Rigol oscilloscope support
+- [x] Yokogawa instruments support
+- [x] Keithley SourceMeter support
+- [x] Fluke datalogger support
+- [x] Hioki datalogger support
+- [x] Generic CSV support
 - [ ] Interactive plots with Plotly
 - [ ] Data export functionality
 - [ ] Report generation
 - [ ] CLI interface
+- [ ] NI DAQ support
+- [ ] LeCroy oscilloscope support
+- [ ] Rohde & Schwarz support
 
 ## License
 
