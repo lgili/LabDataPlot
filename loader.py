@@ -20,12 +20,12 @@ class DataLoader:
         # Specifying format
         loader = DataLoader('file.xlsx', format='keysight')
 
-        # With time step (generates time axis)
+        # With time step (generates time axis in seconds)
         loader = DataLoader('file.xlsx', time_step=1.0)  # 1 second between points
-        loader = DataLoader('file.xlsx', time_step=0.001)  # 1ms between points
 
-        # With time unit for display
-        loader = DataLoader('file.xlsx', time_step=1.0, time_unit='s')
+        # With time step and display in different unit
+        loader = DataLoader('file.xlsx', time_step=1.0, display_unit='min')  # Convert to minutes
+        loader = DataLoader('file.xlsx', time_step=1.0, display_unit='h')    # Convert to hours
 
         # Access data
         df = loader.data
@@ -33,12 +33,21 @@ class DataLoader:
         print(loader.columns)
     """
 
+    # Conversion factors to seconds
+    TIME_CONVERSIONS = {
+        'ms': 0.001,
+        's': 1.0,
+        'min': 60.0,
+        'h': 3600.0,
+    }
+
     def __init__(
         self,
         filepath: str,
         format: str | None = None,
         time_step: float | None = None,
-        time_unit: str = 's'
+        time_unit: str = 's',
+        display_unit: str | None = None
     ):
         """
         Initializes the loader.
@@ -46,15 +55,18 @@ class DataLoader:
         Args:
             filepath: Path to the file
             format: Format/parser name (optional, auto-detects if not provided)
-            time_step: Time interval between samples in seconds (optional).
-                       If provided, generates a time column based on this step.
-                       Examples: 1.0 (1 second), 0.001 (1ms), 60 (1 minute)
-            time_unit: Unit for time axis label ('s', 'ms', 'min', 'h').
-                       Only used for display purposes.
+            time_step: Time interval between samples (optional).
+                       The unit is specified by time_unit parameter.
+                       Examples: 1.0 (1 second if time_unit='s'), 100 (100ms if time_unit='ms')
+            time_unit: Unit of the time_step value ('ms', 's', 'min', 'h'). Default: 's'
+            display_unit: Unit to display on the time axis ('ms', 's', 'min', 'h').
+                          If not provided, uses time_unit.
+                          Useful when measuring in seconds but want to display in minutes/hours.
         """
         self.filepath = Path(filepath)
         self._time_step = time_step
         self._time_unit = time_unit
+        self._display_unit = display_unit or time_unit
 
         if not self.filepath.exists():
             raise FileNotFoundError(f"File not found: {filepath}")
@@ -71,7 +83,7 @@ class DataLoader:
 
         # Generate time axis if time_step is provided
         if time_step is not None:
-            self._generate_time_axis(time_step, time_unit)
+            self._generate_time_axis(time_step, time_unit, self._display_unit)
 
     def _auto_detect(self) -> BaseParser:
         """Automatically detects the file format."""
@@ -85,19 +97,28 @@ class DataLoader:
             f"Supported formats: {', '.join(PARSERS.keys())}"
         )
 
-    def _generate_time_axis(self, time_step: float, time_unit: str):
+    def _generate_time_axis(self, time_step: float, time_unit: str, display_unit: str):
         """
         Generates a time axis based on the time step.
 
         Args:
-            time_step: Time interval between samples (in the specified unit)
-            time_unit: Unit for the time axis ('s', 'ms', 'min', 'h')
+            time_step: Time interval between samples (in time_unit)
+            time_unit: Unit of the time_step ('ms', 's', 'min', 'h')
+            display_unit: Unit to display on the axis ('ms', 's', 'min', 'h')
         """
         n_points = len(self._data)
+
+        # Calculate time values in the original unit
         time_values = np.arange(n_points) * time_step
 
-        # Create column name with unit
-        time_col_name = f'Time ({time_unit})'
+        # Convert to display unit if different
+        if time_unit != display_unit:
+            # First convert to seconds, then to display unit
+            time_in_seconds = time_values * self.TIME_CONVERSIONS.get(time_unit, 1.0)
+            time_values = time_in_seconds / self.TIME_CONVERSIONS.get(display_unit, 1.0)
+
+        # Create column name with display unit
+        time_col_name = f'Time ({display_unit})'
 
         # Insert time column at the beginning
         if self._info.time_column and self._info.time_column in self._data.columns:
@@ -113,15 +134,10 @@ class DataLoader:
         # Update info
         self._info.time_column = time_col_name
 
-        # Calculate and update sample rate
-        if time_unit == 's':
-            self._info.sample_rate = 1.0 / time_step
-        elif time_unit == 'ms':
-            self._info.sample_rate = 1000.0 / time_step
-        elif time_unit == 'min':
-            self._info.sample_rate = 1.0 / (time_step * 60)
-        elif time_unit == 'h':
-            self._info.sample_rate = 1.0 / (time_step * 3600)
+        # Calculate sample rate in Hz (samples per second)
+        time_step_in_seconds = time_step * self.TIME_CONVERSIONS.get(time_unit, 1.0)
+        if time_step_in_seconds > 0:
+            self._info.sample_rate = 1.0 / time_step_in_seconds
 
     @property
     def data(self) -> pd.DataFrame:
@@ -153,8 +169,13 @@ class DataLoader:
 
     @property
     def time_unit(self) -> str:
-        """Returns the time unit used for the time axis."""
+        """Returns the time unit of the time_step value."""
         return self._time_unit
+
+    @property
+    def display_unit(self) -> str:
+        """Returns the display unit for the time axis."""
+        return self._display_unit
 
     def __getitem__(self, key):
         """Direct column access: loader['column']"""
