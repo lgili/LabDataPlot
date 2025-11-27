@@ -3,6 +3,7 @@ DataLoader - Flexible data loader for multiple file formats.
 """
 
 import pandas as pd
+import numpy as np
 from pathlib import Path
 from .parsers import get_parser, PARSERS
 from .parsers.base import BaseParser, DataInfo
@@ -19,21 +20,41 @@ class DataLoader:
         # Specifying format
         loader = DataLoader('file.xlsx', format='keysight')
 
+        # With time step (generates time axis)
+        loader = DataLoader('file.xlsx', time_step=1.0)  # 1 second between points
+        loader = DataLoader('file.xlsx', time_step=0.001)  # 1ms between points
+
+        # With time unit for display
+        loader = DataLoader('file.xlsx', time_step=1.0, time_unit='s')
+
         # Access data
         df = loader.data
         info = loader.info
         print(loader.columns)
     """
 
-    def __init__(self, filepath: str, format: str | None = None):
+    def __init__(
+        self,
+        filepath: str,
+        format: str | None = None,
+        time_step: float | None = None,
+        time_unit: str = 's'
+    ):
         """
         Initializes the loader.
 
         Args:
             filepath: Path to the file
             format: Format/parser name (optional, auto-detects if not provided)
+            time_step: Time interval between samples in seconds (optional).
+                       If provided, generates a time column based on this step.
+                       Examples: 1.0 (1 second), 0.001 (1ms), 60 (1 minute)
+            time_unit: Unit for time axis label ('s', 'ms', 'min', 'h').
+                       Only used for display purposes.
         """
         self.filepath = Path(filepath)
+        self._time_step = time_step
+        self._time_unit = time_unit
 
         if not self.filepath.exists():
             raise FileNotFoundError(f"File not found: {filepath}")
@@ -48,6 +69,10 @@ class DataLoader:
         # Load data
         self._data, self._info = self._parser.parse(str(self.filepath))
 
+        # Generate time axis if time_step is provided
+        if time_step is not None:
+            self._generate_time_axis(time_step, time_unit)
+
     def _auto_detect(self) -> BaseParser:
         """Automatically detects the file format."""
         for name, parser_class in PARSERS.items():
@@ -59,6 +84,44 @@ class DataLoader:
             f"Could not detect file format: {self.filepath.name}\n"
             f"Supported formats: {', '.join(PARSERS.keys())}"
         )
+
+    def _generate_time_axis(self, time_step: float, time_unit: str):
+        """
+        Generates a time axis based on the time step.
+
+        Args:
+            time_step: Time interval between samples (in the specified unit)
+            time_unit: Unit for the time axis ('s', 'ms', 'min', 'h')
+        """
+        n_points = len(self._data)
+        time_values = np.arange(n_points) * time_step
+
+        # Create column name with unit
+        time_col_name = f'Time ({time_unit})'
+
+        # Insert time column at the beginning
+        if self._info.time_column and self._info.time_column in self._data.columns:
+            # Replace existing time column
+            old_time_col = self._info.time_column
+            col_idx = self._data.columns.get_loc(old_time_col)
+            self._data.drop(columns=[old_time_col], inplace=True)
+            self._data.insert(col_idx, time_col_name, time_values)
+        else:
+            # Insert new time column at the beginning
+            self._data.insert(0, time_col_name, time_values)
+
+        # Update info
+        self._info.time_column = time_col_name
+
+        # Calculate and update sample rate
+        if time_unit == 's':
+            self._info.sample_rate = 1.0 / time_step
+        elif time_unit == 'ms':
+            self._info.sample_rate = 1000.0 / time_step
+        elif time_unit == 'min':
+            self._info.sample_rate = 1.0 / (time_step * 60)
+        elif time_unit == 'h':
+            self._info.sample_rate = 1.0 / (time_step * 3600)
 
     @property
     def data(self) -> pd.DataFrame:
@@ -82,6 +145,16 @@ class DataLoader:
         if self._info.time_column:
             return self._data[self._info.time_column]
         return None
+
+    @property
+    def time_step(self) -> float | None:
+        """Returns the time step used for generating time axis."""
+        return self._time_step
+
+    @property
+    def time_unit(self) -> str:
+        """Returns the time unit used for the time axis."""
+        return self._time_unit
 
     def __getitem__(self, key):
         """Direct column access: loader['column']"""
